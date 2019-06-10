@@ -3,28 +3,17 @@
 (require 'package)
 
 (add-to-list 'package-archives
-             '("melpa-stable" . "https://stable.melpa.org/packages/")
-             t)
-(add-to-list 'package-archives
-             '("melpa" . "https://melpa.org/packages/")
-             t)
+	     '("melpa-stable" . "https://stable.melpa.org/packages/")
+	     '("melpa" . "https://melpa.org/packages/"))
 
 (package-initialize)
-
-;; Set default height
-(setq initial-frame-alist
-      '((width . 150) (height . 65)))
-
-;; default/sebsequent window
-(setq default-frame-alist
-      '((width . 150) (height . 60)))
 
 (tool-bar-mode -1)
 
 ;; Set a directory for temporary/state related files.
 (defvar dotfiles-dirname
   (file-name-directory (or load-file-name
-                           (buffer-file-name)))
+			   (buffer-file-name)))
   "The directory where this code is running from.
    Ideally, this will be ~/.emacs.d.")
 
@@ -35,12 +24,23 @@
 ;; Create the temp-files folder if necessary.
 (make-directory tempfiles-dirname t)
 
+(add-to-list 'default-frame-alist '(height . 145))
+(add-to-list 'default-frame-alist '(width . 175))
+(set-face-attribute 'default nil :height 145)
+(set-default-font "Source Code Pro-14")
+
 
 ;; Move Emacs state into the temp folder we've created.
 (setq ido-save-directory-list-file (concat tempfiles-dirname "ido.last")
       recentf-save-file (concat tempfiles-dirname "recentf")
       save-place-file (concat tempfiles-dirname "places")
       backup-directory-alist `(("." . ,(concat tempfiles-dirname "backups"))))
+
+(scroll-bar-mode -1)
+
+(add-hook 'before-save-hook (lambda ()
+			      (delete-trailing-whitespace)
+			      (whitespace-cleanup)))
 
 ;;; Company - complete anything
 (require 'company)
@@ -50,32 +50,57 @@
 (define-key company-active-map [tab] 'company-complete)
 (define-key company-active-map (kbd "TAB") 'company-complete)
 
-;;; Helm - Handy completion and narrowing
+;;(add-to-list 'custom-theme-load-path "~/.emacs.d/themes/")
+(load-theme 'atom-one-dark t)
+
+;; Helm - Handy completion and narrowing
 ;; Explicitly turn off global `helm-mode'
+(setq helm-grep-ag-command "/usr/local/bin/ag --line-numbers -S --hidden --color --nogroup %s %s %s")
 (require 'helm-config)
 (helm-mode 1)
 
-
-(defun helm-do-grep-ag-with-directory (arg)
- "Do `helm-do-grep-ag' with `default-directory' set to D."
- (interactive "P")
- (let ((default-directory (expand-file-name (vc-root-dir))))
-   (call-interactively 'helm-do-grep-ag arg)))
-
 (defun helm-grep-it (arg)
   "Run the_silver_search with `helm-do-grep.
+
 Argument ARG is the prefix argument which when not supplied causes `vc-root-dir'
 to be the default root.  Otherwise current-directory is the default root."
-  (interactive "P")
-  (if arg
-      (call-interactively 'helm-do-ag-project-root)
-    ;; Now let it be a bit more convenient.
-    (let* ((default-directory (expand-file-name (or (ignore-errors (vc-root-dir))
-                                                    default-directory)))
-           (ag-type-list '((emacs-lisp-mode . "--elisp")
-                           (clojure-mode . "--clojure")))
-           (ag-type (assoc-default major-mode ag-type-list)))
-      (helm-grep-ag-1 default-directory (list ag-type)))))
+  (interactive "p")
+  (when (and (boundp 'original-helm-mm-split-pattern)
+	     original-helm-mm-split-pattern)
+    (setf (symbol-function 'helm-mm-split-pattern)
+	  original-helm-mm-split-pattern))
+  (cond
+   ((= arg 4)
+    (call-interactively 'helm-do-grep-ag-with-directory))
+   (t (let* ((default-directory (expand-file-name (or (ignore-errors (vc-root-dir))
+						      (ignore-errors
+							(progn (require 'magit)
+							       (magit-toplevel)))
+						      default-directory)))
+	     (ag-type-list '((emacs-lisp-mode . "--elisp")
+			     (clojure-mode . "--clojure")))
+	     (ag-type (assoc-default major-mode ag-type-list)))
+	(if (not (= arg 16))
+	    (helm-grep-ag-1 default-directory (list ag-type))
+	  (setq original-helm-mm-split-pattern
+		(symbol-function 'helm-mm-split-pattern))
+	  (setf (symbol-function 'helm-mm-split-pattern)
+		(lambda (p) (list p)))
+	  (helm-grep-ag-1 default-directory (list ag-type)))))))
+
+
+(defun helm-sudo-find-file ()
+    "Open file with super user privileges."
+    (interactive)
+    (let ((file-path (ido-read-file-name "File: " (vc-root-dir))))
+      (helm-find-file-as-root file-path)))
+
+
+(setq helm-always-two-windows t
+      helm-split-window-in-side-p nil
+      helm-split-window-default-side 'below
+      helm-adaptive-history-file (expand-file-name "tmp/helm-adaptive-history"
+						   user-emacs-directory))
 
 
 (global-set-key (kbd "M-N") 'helm-grep-it)
@@ -83,14 +108,19 @@ to be the default root.  Otherwise current-directory is the default root."
 
 ;; Various useful key-bindings (other than Helm Defaults)
 (global-set-key (kbd "C-x c r") nil) ; unset this because I plan to
-                                        ; use it as a prefix key.
+					; use it as a prefix key.
 (global-set-key (kbd "C-x c r b") 'helm-filtered-bookmarks)
 (global-set-key (kbd "C-x c r r") 'helm-regexp)
-(global-set-key (kbd "C-x c C-b") 'helm-mini)
+(global-set-key (kbd "C-c b") 'helm-mini)
+(global-set-key (kbd "C-c r") 'helm-recentf)
+(global-set-key (kbd "C-c f") 'helm-sudo-find-file)
 (global-set-key (kbd "M-y") 'helm-show-kill-ring)
-(global-set-key (kbd "C-x c SPC") 'helm-all-mark-rings)
 (global-set-key (kbd "C-h SPC") 'helm-all-mark-rings)
 (global-set-key (kbd "C-x c r i") 'helm-register)
+(global-set-key (kbd "M-i") 'helm-imenu)
+(global-set-key (kbd "C-.") 'icicle-imenu)
+(global-set-key (kbd "C-x C-f") 'helm-find-files)
+(helm-adaptive-mode +1)
 ;; Useful defaults: C-x c i, C-x c I
 
 ;;; Avy
@@ -116,8 +146,10 @@ to be the default root.  Otherwise current-directory is the default root."
 (setq ring-bell-function 'ignore)
 
 ;; Window numbering mode
-(require 'window-numbering)
-(window-numbering-mode 1)
+;; (require 'window-numbering)
+;; (window-numbering-mode 1)
+
+(global-set-key (kbd "M-l") 'ace-window)
 
 ;;; Cider
 (eval-after-load 'cider-mode
@@ -129,17 +161,17 @@ cider."
        (concat ns ">\n"))
 
      (setq cider-repl-history-file (concat tempfiles-dirname
-                                           "cider-history.txt")
-           cider-repl-history-size most-positive-fixnum
-           cider-repl-wrap-history t
-           cider-repl-prompt-function 'cider-repl-prompt-on-newline
-           nrepl-buffer-name-separator "-"
-           nrepl-buffer-name-show-port t
-           nrepl-log-messages t
-           cider-annotate-completion-candidates t
-           cider-completion-annotations-include-ns 'always
-           cider-show-error-buffer 'always
-           cider-prompt-for-symbol nil)
+					   "cider-history.txt")
+	   cider-repl-history-size most-positive-fixnum
+	   cider-repl-wrap-history t
+	   cider-repl-prompt-function 'cider-repl-prompt-on-newline
+	   nrepl-buffer-name-separator "-"
+	   nrepl-buffer-name-show-port t
+	   nrepl-log-messages nil
+	   cider-annotate-completion-candidates t
+	   cider-completion-annotations-include-ns 'always
+	   cider-show-error-buffer 'always
+	   cider-prompt-for-symbol nil)
 
      (add-hook 'cider-mode-hook 'eldoc-mode)))
 
@@ -154,15 +186,7 @@ cider."
 
      (eval-after-load 'clojure-mode
        '(progn
-          (add-hook 'clojure-mode-hook 'turn-on-clj-refactor)))))
-
-
-;; Load zenburn theme
-(add-to-list 'custom-theme-load-path "~/.emacs.d/themes/")
-(load-theme 'zenburn t)
-
-;; Set font
-(set-default-font "source code pro")
+	  (add-hook 'clojure-mode-hook 'turn-on-clj-refactor)))))
 
 ;; All ido things
 (require 'ido)
@@ -182,10 +206,10 @@ cider."
   (if (boundp 'ido-cur-list)
       ad-do-it
     (setq ad-return-value
-          (ido-completing-read
-           prompt
-           (all-completions "" collection predicate)
-           nil require-match initial-input hist def))))
+	  (ido-completing-read
+	   prompt
+	   (all-completions "" collection predicate)
+	   nil require-match initial-input hist def))))
 
 
 ;; exec-path picks up wrong git without this line
@@ -223,10 +247,15 @@ cider."
     (find-alternate-file (concat "/sudo:root@localhost:" buffer-file-name))))
 
 ;; use this in your init.el for nice pretty printing
-(setq cider-repl-use-pretty-printing nil)
+;; (setq cider-repl-use-pretty-printing nil)
 
 ;; Clj Refactor key binding prefix
 (cljr-add-keybindings-with-prefix "C-c C-r")
+
+;; M-. without REPL
+(dumb-jump-mode)
+
+(desktop-save-mode t)
 
 ;; Faster pretty printing
 ;; (setq cider-pprint-fn "fipp.clojure/pprint")
@@ -235,9 +264,10 @@ cider."
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
+ '(org-agenda-files nil)
  '(package-selected-packages
    (quote
-    (hc-zenburn-theme zenburn-theme window-numbering smex magit-rockstar magit-gitflow magit-gerrit magit-find-file magit-filenotify magit-annex magic-filetype ido-ubiquitous helm-ag exec-path-from-shell darktooth-theme company color-theme-modern clj-refactor avy))))
+    (dumb-jump atom-one-dark-theme helm-ag ag smex helm cherry-blossom-theme emms pdf-tools elfeed git-gutter magit yaml-mode lua-mode go-mode rvm haml-mode rinari erlang web-mode clj-refactor cider clojure-mode paredit macrostep python-mode helm-dash helm-bbdb ido-completing-read+ w3m org-pomodoro intero haskell-mode flycheck auto-yasnippet yasnippet dired-subtree dired-narrow company-statistics company wolfram popup pcache ace-window avy eyebrowse bookmark+ projectile which-key discover markdown-mode boxquote vimish-fold origami change-inner expand-region multiple-cursors hydra region-bindings-mode wgrep-helm wgrep fancy-narrow rainbow-mode smart-mode-line page-break-lines async htmlize dash use-package))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
